@@ -1,0 +1,1031 @@
+Exploration of 2016 Presidential Campaign by Steven Lin
+========================================================
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, packages}
+# Load all of the packages that you end up using in your analysis in this code
+# chunk.
+# Notice that the parameter "echo" was set to FALSE for this code chunk. This
+# prevents the code from displaying in the knitted HTML output. You should set
+# echo=FALSE for all code chunks in your file, unless it makes sense for your
+# report to show the code that generated a particular plot.
+
+# The other parameters for "message" and "warning" should also be set to FALSE
+# for other code chunks once you have verified that each plot comes out as you
+# want it to. This will clean up the flow of your report.
+
+library(ggplot2) # for plot
+library(dplyr) # for join dataframe, and for groupby
+library(scales)  #use scales to adjust the y axis unit format with thousand separater by comma
+
+# below for map plot
+# install.packages(c("ggplot2", "devtools", "dplyr", "stringr"))
+# install.packages(c("maps", "mapdata")) # some standard map packages.
+# library(ggmap)
+library(maps)
+library(mapdata)
+library(stringi) # to use stri_trans_totitle() to capitalize each word
+library(viridis) # for map plot ?
+
+
+
+# install.packages('zoo')
+library(zoo)  # for yearmon()
+# library(plyr) # for arrange, to sort dataframe => but it looks like I don't need (I shouldn't) to load plyr, the dplyr will allow it.
+
+getwd()
+```
+
+```{r echo=FALSE, Load_the_Data}
+# Load the Data
+camp = read.csv('P00000001-CA.csv', row.names = NULL)
+
+colnames(camp) = colnames(camp)[-1]  # This csv data structure seems have one additional blank field in data which doesn't have header, so this remove the first column header
+camp = camp[, -ncol(camp)] # this remove the last column entirely (which is NA)
+str(camp)
+
+```
+
+This campaign dataset looks doesn't have much information about the candidates. I think it could be interesting to add candidates's gender, political party and age into my exploratory analysis. 
+Google search presidential candidate 2016 to find link that gives relevant info: http://presidential-candidates.insidegov.com/ 
+I add in these info into an R dataframe and join to the camp dataframe.
+
+```{r to add more variables information about the candidates, echo=FALSE, message=FALSE, warning=FALSE}
+
+# create vectors to pass in to data.frame for more candidates info
+
+cand_name <- c('Fiorina, Carly','Clinton, Hillary Rodham','Stein, Jill','Trump, Donald J.','Johnson, Gary','Sanders, Bernard',"Cruz, Rafael Edward 'Ted'",'Rubio, Marco','Paul, Rand','Carson, Benjamin S.','Kasich, John R.','Huckabee, Mike','Santorum, Richard J.',"O'Malley, Martin Joseph",'Bush, Jeb','Christie, Christopher J.','Graham, Lindsey O.','Pataki, George E.','Gilmore, James S III','Jindal, Bobby','Webb, James Henry Jr.','McMullin, Evan','Perry, James R. (Rick)','Walker, Scott','Lessig, Lawrence')
+
+cand_party <- c('Republican Party','Democratic Party','Green Party','Republican Party','Libertarian Party','Democratic Party','Republican Party','Republican Party','Republican Party','Republican Party','Republican Party','Republican Party','Republican Party','Democratic Party','Republican Party','Republican Party','Republican Party','Republican Party','Republican Party','Republican Party','Democratic Party','Independent','Republican Party','Republican Party','Democratic Party')
+
+cand_residence <- c('Los Altos Hills, CA','Chappaqua, NY','Lexington, MA','New York City, NY','Taos, NM','Burlington, VT','Houston, TX','West Miami, FL','Bowling Green, KY','Baltimore, MD','Westerville, OH','North Little Rock, AR','Mount Lebanon, PA','Baltimore, MD','Miami, FL','Mendham, NJ','Seneca, SC','Peekskill, NY','Henrico County, VA','Baton Rouge, LA','Falls Church, VA','Washington D.C.','Austin, TX','Wauwatosa, WI','Cambridge, MA')
+
+cand_gender <- c('Female','Female','Female','Male','Male','Male','Male','Male','Male','Male','Male','Male','Male','Male','Male','Male','Male','Male','Male','Male','Male','Male','Male','Male','Male')
+
+cand_age <- c(63,70,67,71,65,76,47,46,55,66,65,62,59,55,64,55,62,72,68,46,71,41,67,50,56)
+
+df_info <- data.frame(cand_name, cand_party,cand_residence,cand_gender,cand_age)
+
+library(dplyr) # to use join
+camp = left_join(camp, df_info, by=c('cand_nm' = 'cand_name'))  # to join camp table with the candidate info
+
+
+```
+
+I also want to add a column representing the "County". This column will be created by joining the camp dataset with the table I obtain online with zip code to county mapping. Link: http://www.zipcodestogo.com/California/
+This "county" column is going to be used to create the map plot later on.
+
+```{r preparing for map plotting 1, echo=FALSE, message=FALSE, warning=FALSE}
+# first to add the county column into the camp data.frame, so I can then use group_by to get a summarise data.frame by county (to name subregion)
+
+city_county <- read.csv('City_Zip_County_CA.csv') # this csv has 3 columns, zip code -> city -> county
+
+city_county$Zip.Code <- factor(city_county$Zip.Code) # factorized so you can use join with camp data.frame
+
+camp$zip_code_clean <- factor(substr(camp$contbr_zip,1,5))  # add 5-digit zip code to camp dataframe to match better with . # make it factor allow ou to do levels
+camp <- left_join(camp, city_county, by = c("zip_code_clean" = "Zip.Code")) # this will add county to the camp dataframe
+
+```
+
+The data set provide Califonia's 2016 Presidential Campaign's contributor's name, location, employer, occupation, age, contribution amount, contribution date, candidates name, etc.  I add in more columns related to the candidates' political party, residence, gender and age.
+
+# Univariate Plots Section
+
+```{r structure of camp, echo=FALSE, message=FALSE, warning=FALSE}
+str(camp)
+```
+```{r summary of camp, echo=FALSE, message=FALSE, warning=FALSE}
+summary(camp)
+```
+```{r candidates info, echo=FALSE, message=FALSE, warning=FALSE}
+summary(df_info)
+
+```
+
+I am curious on the age distribution of the candidates, so create histogram below to see. Age is between 41 to 76, whilte more candidates is between 60 to 70 range.
+
+```{r Candidate age distribution, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(df_info, aes(x=cand_age))+
+  geom_histogram()
+```
+
+I am curious to see a preliminary view on simple histogram of contribution amount, to know how much usually does each person contributed, and 50% (median) is under $27 dollar, 75% is under $88 dollar, so it is already rare to see individual contribution larger than $200.
+
+```{r Univariate_Plots, echo=FALSE, message=FALSE, warning=FALSE}
+#hist(camp$contb_receipt_amt, breaks = seq(-20000,20000,50))  # this histogram cover too wide which doesn't say much
+
+
+# ggplot(data=camp,aes(x=contb_receipt_amt)) +
+#   geom_histogram(binwidth = 25) +
+#   scale_x_continuous(limits=c(0,500), breaks = seq(-10000,10000,50)) # this looks ok, but not ideal
+
+ggplot(data=camp,aes(x=contb_receipt_amt)) +
+  geom_histogram(binwidth = 25) +
+  scale_x_continuous(limits=c(0,quantile(camp$contb_receipt_amt,0.97)), breaks = seq(0,quantile(camp$contb_receipt_amt,0.97),50))+
+  scale_y_continuous(labels=comma)  # this I can adjust the percentile I want, so I like this better
+
+```
+
+With the hisogram above, I would like to see in table format to see exact number of distribution, but I would group my summary based on range of the contribution amount for clean summary, to summarize to different range => below 0, 0 to 200, 200 to 500, 500 to 1000, 1000 to 2000, 2000 to maximum.
+
+```{r create summarise with cut and group_by, echo=FALSE, message=FALSE, warning=FALSE}
+library(dplyr)
+
+camp$amt_range <- cut(camp$contb_receipt_amt,
+                     c(min(camp$contb_receipt_amt)-1,0,200,500,1000,2000,max(camp$contb_receipt_amt))) # add new column for amount range
+
+
+
+price_group <- group_by(camp, amt_range)
+camp_by_amt <- summarise(price_group, 
+                        n=n(),
+                        Total_Dollar = sum(contb_receipt_amt),
+                        percent_to_Total = paste(round(sum(contb_receipt_amt)/sum(camp$contb_receipt_amt)* 100, digits = 1), "%", sep=""),
+                        percent_occurence = paste(round(n / nrow(camp) * 100, digits = 1),"%",sep="")) # to show in % format
+
+
+camp_by_amt
+# summary(camp$contb_receipt_amt)
+# sum(camp$contb_receipt_amt)
+
+```
+Above table shows the most common contribution is within 0 to 200 dollars, about 88.9% contribution falls in that range. It is also interesting to see there are 16366 negative contribution.  Upon further searching online, I believe some are refund back to the contributor upon their request, and some are related to the change of contributor names, but it only occur 1.3% of the time. So I decide to remove the contribution amount less than 0 for simplicity.
+
+```{r remove rows with negative contribution amount, echo=FALSE, message=FALSE, warning=FALSE}
+
+camp <- subset(camp, contb_receipt_amt > 0)
+
+```
+
+Now I am interested to see how each political party receive in terms of number of contribution.
+
+```{r candidate party, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data=camp, aes(x=cand_party))+
+  geom_histogram(stat='count') +
+  scale_y_continuous(labels=comma)
+```
+
+Above histogram shows most of the contribution, over 900,000 contribution to made to democratic party. California is indeed a Democratic state.
+
+Following I would like to see sort the plot from highest count to lowest count for quicker interpretation of the histogram.
+
+```{r function to sort plot by count, echo=FALSE, message=FALSE, warning=FALSE}
+reorderNew <- function(x) {
+  factor(x, levels=names(sort(table(x))))
+} # it is quite useful that it sort on table count, allow you to sort in the plot by count, code is from ?geom_bar documentation
+```
+
+
+```{r candidate party sorted, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data=camp, aes(x=reorderNew(cand_party)))+
+  geom_histogram(stat='count') +
+  scale_y_continuous(labels=comma)
+```
+
+```{r to convert the histogram to percentage, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data=camp, aes(x=reorderNew(cand_party), y=..count../1287980))+
+  geom_bar() +
+  scale_y_continuous(labels=percent)
+```
+
+Above plot is ranked by highest to lowest count, and first place is Democratic (receive more than 80% of overall contribution), and second place is Republican Party, while Democratic won by large margin.
+
+
+Now I am curious to see how many contribution that female candidate get versus male candidate get.
+
+```{r candidate gender, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data=camp, aes(x=cand_gender))+
+  geom_histogram(stat='count') +
+  scale_y_continuous(labels=comma)
+```
+
+Above histogram shows actually Female candidate overall get about 100,000 count of contribution. However, considering there is only 3 female candidate versus 22 male candidate, I can see Female candidate is getting significant higher number of contribution than male in terms of individual candidate. And the reason must be Hillary Clinton. She must be receiving lots of contribution from California.
+I will use below plot to verify and visualize the number of contribution by candidate.
+
+```{r count by candidate name, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data=camp, aes(x=reorderNew(cand_nm)))+
+  geom_histogram(stat='count') +
+  scale_y_continuous(labels=comma) +
+  coord_flip()
+```
+
+Above histogram verify my understanding that Hillary Cinton is the number 1 candidate that receive the most count of contributio in California, followed by second place Bernard Sanders, and third place Donald Trump.
+
+However, the above plot looks too crowded since it include all 25 candidates, so I'd like to limit my graph to only top 10 candidate. 
+
+```{r limit top 10 candidate, echo=FALSE, message=FALSE, warning=FALSE}
+cand_nm_10 <- tail(names(sort(table(camp$cand_nm))),10) # to get only top 10
+df_cand_nm_10 <- subset(camp, cand_nm %in% cand_nm_10)
+df_cand_nm_10$cand_nm <- factor(df_cand_nm_10$cand_nm, levels = cand_nm_10) # factorized to allow plot to show from top to bottom order
+ggplot(data=df_cand_nm_10, aes(x=cand_nm))+
+  geom_bar()+
+  scale_y_continuous(labels=comma)+
+  coord_flip()  # great, coord_flip() simply make rotate x and y, so y-axis can hold the text for better visualization
+```
+
+Or, an alternative view that have candidate name on x axis but tilted the text slightly to avoid overlapping.
+
+```{r an alternative to rotate the x axis, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data=df_cand_nm_10, aes(x=cand_nm))+
+  geom_histogram(stat='count') +
+  scale_y_continuous(labels=comma) +
+  theme(axis.text.x = element_text(angle = 40, hjust = 1)) # this is the way to rotate the text in x-axis to avoid overlap
+```
+
+
+Next, I am interested to see how is the number of contribution fluctuate with time (date). Is there any increasing or decreasing trend, or is there any spike ?
+
+```{r by date not good, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data=camp, aes(x=contb_receipt_dt))+
+  geom_histogram(stat='count') +
+  scale_y_continuous(labels=comma)
+```
+
+My initial try with simple geom_histogram doesn't look successful which shows too many flutuation and not even show clear date. I need to find a way to bin it and to show clear period. 
+
+
+```{r to convert contb_receipt_dt to clean date format, eventually to pass to the plot, echo=FALSE, message=FALSE, warning=FALSE}
+camp$date <- as.Date(camp$contb_receipt_dt, format='%d-%b-%y')
+
+```
+
+
+```{r x date breaks 3 months, echo=FALSE, message=FALSE, warning=FALSE} 
+#fig.width()
+library(scales)
+ggplot(data=camp, aes(x=date)) +
+  geom_histogram() +
+  scale_x_date(date_breaks='3 month', labels=date_format('%b-%y'))
+```
+
+The aboe is better, but I would like to show by each monthly period, and exclude the period that don't have much activity. So I will tweak further in plot following.
+
+```{r count by dates, echo=FALSE, message=FALSE, warning=FALSE, fig.width=10}
+ggplot(data=camp, aes(x=date)) +
+  geom_histogram(binwidth=30) +  # binwidth = 30 to simulate 1 month length
+  scale_x_date(date_breaks='1 month', labels=date_format('%b-%y'), limits=as.Date(c(quantile(as.numeric(camp$date),0.03),quantile(as.numeric(camp$date),1)),origin='1970-01-01')) +
+  theme(axis.text.x=element_text(angle=25, hjust=1)) # to tilt the x-axis label for visualization
+```
+
+Above I limit the period that exclude bottom 3% and top 3% date from every contribution, and limit to 1 month per histogram. I shows increasing trend that it spike on Nov-16, the month that election day took place. Electrion day is 11/8/2016. Interestingly, between Mar-16 to May-16, there shows spike of number of contribution as well. Perhaps it is due to some presidential campaign effort took place at that time. If I have more data about the campaign activity, I may dig further to see what cause the spike.
+
+
+```{r summary on date, echo=FALSE, message=FALSE, warning=FALSE}
+summary(camp$date)
+```
+
+```{r top and bottom 3 percentile, echo=FALSE, message=FALSE, warning=FALSE}
+as.Date(c(quantile(as.numeric(camp$date),0.03),quantile(as.numeric(camp$date),0.97)),origin='1970-01-01')
+```
+
+Starting 11/5/2013 the first contribution start 
+I can achieve the similar period in plot by hard-code the date as.Date(c('2015-09-01','2016-12-31')) into the ggplot limits, not using percentile.
+
+```{r Histogram of contibution date, echo=FALSE, message=FALSE, warning=FALSE, fig.width=10}
+ggplot(data=camp, aes(x=date)) +
+  geom_histogram(binwidth = 30) +  # if you enter stat='count' it won't give you binwidth = 30, so would be very fluctuating
+  scale_x_date(date_breaks='1 month', labels=date_format('%b-%y'), limits=as.Date(c('2015-09-01','2016-12-31'))) +
+  theme(axis.text.x=element_text(angle=25, hjust=1)) # to tilt the x-axis label for visualization
+```
+
+Now I want to explore the number of contribution by county. Below plot is my initial try to visualize it. However, there are clearly too many county to be included, so I need to limit my exploration to top 10 county.
+
+```{r histogram of county, echo=FALSE, message=FALSE, warning=FALSE}
+library(scales)  #use scales to adjust the y axis unit format with thousand separater by comma
+ggplot(data=camp, aes(x=County))+
+  geom_histogram(stat='count') +
+  scale_y_continuous(labels=comma)
+
+```
+
+The above histogram is too crowded, so I will limit my histogram to show the top 10 county per below.
+
+```{r 1D count by County, fig.width=10, echo=FALSE, message=FALSE, warning=FALSE}
+library(ggplot2)
+library(scales)
+county_10 <- tail(names(sort(table(camp$County))),10) # to get only top 10 county
+
+df_county_10 <- subset(camp, County %in% county_10)
+df_county_10$County <- factor(df_county_10$County, levels = rev(county_10)) # factorized county to allow plot to show from top to bottom order
+# nrow(df_county_10)/nrow(camp) # 0.746 =< 75%
+
+ggplot(data=df_county_10, aes(x=County))+
+  geom_bar() +
+  scale_y_continuous(labels=comma)
+
+```
+
+Above plot shows that Los Angeles is the top 1 county that have most number of contribution, and interestingly it exceeds by large margin than the second place San Diego, about 3 times as more contribution. I would like to demonstrate it in terms of % to the total number of contribution 1287980, using plot below. Los Angeles county occupied almost 30% of overall number of contribution.
+
+```{r online suggestion to convert y to percent of total good , fig.width=10, echo=FALSE, message=FALSE, warning=FALSE}
+
+ggplot(data=df_county_10, aes(x=County, y=..count../1287980))+
+  geom_bar() +
+  scale_y_continuous(labels=percent)
+
+```
+
+
+Now I am interested to see the histogram of number of contribution by candidates' political party. It shows Democratic party got the most, significantly higher than others.
+
+```{r political party bar chart, echo=FALSE, message=FALSE, warning=FALSE}
+
+#use geom_bar gives the same result as geom_histogram(stat='count')
+ggplot(camp, aes(x=cand_party)) +
+  geom_bar() +
+  scale_y_continuous(labels=comma)
+```
+
+Below plot is converting to percentage, more than 80% are to Democratic party. California is indeed a Demoratic state.
+
+```{r try convert y to percent, echo=FALSE, message=FALSE, warning=FALSE}
+library(scales)
+ggplot(data=camp, aes(x=cand_party, y=..count../sum(..count..)))+
+  geom_histogram(stat='count') +
+  scale_y_continuous(labels=percent)  # make y-axis to % format
+
+```
+
+Now I'd like to explore what employers have highest number of contribution. I will limit my exploration to top 30 employers.
+
+```{r 1D count by Employer, fig.width=10, echo=FALSE, message=FALSE, warning=FALSE}
+library(ggplot2)
+library(scales)
+contbr_employer_top <- tail(names(sort(table(camp$contbr_employer))),30) # to get only top
+
+df_contbr_employer_top <- subset(camp, contbr_employer %in% contbr_employer_top)
+df_contbr_employer_top$contbr_employer <- factor(df_contbr_employer_top$contbr_employer, levels = contbr_employer_top) # factorized county to allow plot to show from top to bottom order
+# nrow(df_county_10)/nrow(camp) # 0.746 =< 75%
+
+ggplot(data=df_contbr_employer_top, aes(x=contbr_employer))+
+  geom_bar() +
+  scale_y_continuous(labels=comma) +
+  coord_flip()
+```
+```{r, fig.width=10, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data=df_contbr_employer_top, aes(x=contbr_employer, y=..count../1287980))+
+  geom_bar() +
+  scale_y_continuous(labels=percent) +
+  coord_flip()
+```
+
+It shows almost 15% of contributor with N/A employer, and almost 10% NONE. These could be self employed or not working, or simply not disclosed. The second largest is "RETIRED", almost 10% of overall contribution, and it is interesting to see that people in retirement made up the most count of contribution, which signal their involvement and influence to the election in California.  The third largest is "SELF-EMPLOYED" almost 10%, but there are another category called "SELF EMPLOYED" and "SELF", which altogether aggregated to almost 15%, so I may argue that "SELF-EMPLOYED" are the top 1 contributor to California Election, and signal their involvement and influence to the election in California.
+
+The first company with names show on the list is GOOGLE, followed by KAISER PERMANENTE, and Stanford University, and UCLA, and Apple.  These include big tech company, health care provider and University system. It is good to see that school system are also quite involved with the election. 
+
+Next, I'd like to see the number of contribution by occupation. Also, I'd like to limit to top 40.
+
+```{r 1D count by Occupation, fig.width=10, echo=FALSE, message=FALSE, warning=FALSE}
+library(ggplot2)
+library(scales)
+contbr_occup_top <- tail(names(sort(table(camp$contbr_occupation))),30) # to get only top
+
+df_contbr_occup_top <- subset(camp, contbr_occupation %in% contbr_occup_top)
+df_contbr_occup_top$contbr_occupation <- factor(df_contbr_occup_top$contbr_occupation, levels = contbr_occup_top) 
+
+ggplot(data=df_contbr_occup_top, aes(x=contbr_occupation))+
+  geom_bar() +
+  scale_y_continuous(labels=comma) +
+  coord_flip()
+```
+```{r, fig.width=10, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data=df_contbr_occup_top, aes(x=contbr_occupation, y=..count../1287980))+
+  geom_bar() +
+  scale_y_continuous(labels=percent) +
+  coord_flip()
+```
+
+Above plots about occupation to number of contribution, showing again that RETIRED are the largest group of number of contribution at 20% out of overall number of contribution. Not employed is second largest, this could be retired, business owner, not willing to disclose, or simply not working.  Attorney is thrid on list, followed by Teacher, Engineer etc.  This somehow coincide with the histogram by Employer which shows self-employee, school and high tech company as top contributor's employer. I feel these are the group that are more involved with election, and are wealthy enough for contribution.
+
+Next, I am curious to see how is the number of contribution by candidates' age.
+
+```{r candidate age and count, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data=camp,aes(x=cand_age)) +
+  geom_histogram(binwidth = 5) +
+  scale_x_continuous(breaks=seq(40,max(cand_age),5))
+
+```
+
+The histogram above shows the candidate at their 70 to 80 year-of-old get the majority of the contribution. Not surprisingly, in earlier plot the top 3 candidates that receive most number contribution are Clinton, Bernard and Trump are all in these age range. I feel this is the age that accumulate most of the experience and connetion needed to run for President.
+
+Next, I would like to see whether Home Residence of the candidates receive the number of contribution.
+
+```{r home residence, echo=FALSE, message=FALSE, warning=FALSE}
+
+reorderNew <- function(x) {
+  factor(x, levels=names(sort(table(x))))
+} # it is quite useful that it sort on table count, allow you to sort in the plot by count, code is from ?geom_bar documentation
+ggplot(data=camp, aes(reorderNew(cand_residence)))+
+  geom_bar() +
+  scale_y_continuous(labels=comma) +
+  coord_flip()
+
+```
+
+To limit the histogram plot to top 10 as below.
+
+```{r simplify code further successfully, echo=FALSE, message=FALSE, warning=FALSE}
+
+residence_top <- tail(names(sort(table(camp$cand_residence))),15) 
+
+ggplot(data=subset(camp, cand_residence %in% residence_top), aes(reorderNew(cand_residence)))+
+  geom_bar() +
+  scale_y_continuous(labels=comma) +
+  xlab('Residence') +
+  coord_flip()
+```
+
+Not surprisingly, the above plot shows top 3 which are for Clinton, Bernard and Donald's residence. This plot is not particularly meaningfu, but good to know 2 of the top candidates residence in New York. 
+
+
+# Univariate Analysis
+
+### What is the structure of your dataset?
+There are 1287980 contribution record (exclude negative contribution amount) in the dataset with 28 variable (included 10 variables/columns that I subsequently added). It includes contribution amount for each contribution, contributor name, occupation, employer, geographical location, the candidate name, candidate gender, candidate political party, and many more.
+
+### What is/are the main feature(s) of interest in your dataset?
+The main feature of interest is Contribution amount (contb_receipt_amt). I want to see how other variable related to the contribution amount.
+
+### What other features in the dataset do you think will help support your \
+investigation into your feature(s) of interest?
+City, county, candidate's political party and Dates may show some trend to the distribution of contribution amount.
+
+### Did you create any new variables from existing variables in the dataset?
+Yes, I created County variable which is a way to group multiple zip code into larger group for easier visualization and also will be used to create the map plot in 2D analysis. Also, I created variables related to candidate's info such as gender, political party and age. Lastly, I reconstruct the Date column to allow ggplot to interpret it and visualize the trend.
+
+### Of the features you investigated, were there any unusual distributions? \
+Did you perform any operations on the data to tidy, adjust, or change the form \
+of the data? If so, why did you do this?
+
+The highest number of contribution are in Los Angeles which is almost 30% of total number of contribution. Comparing to the number 2 is San Diego which is less than 10%, so Los Angeles exceed by large margin which is kind of interesting. However, I will do similar comparison by contribution amount in 2D analysis, rather than purely by the number of occurence, which may reveal different picture.
+
+I convert the contribution date column (contb_receipt_dt) from string date format dd-MMM-yy into actual date format using to.Date function, so that I can plot on the date in histogram format. I also trim the zip code into 5 digit format so that I can do join table by zip code to generate "County" column more accurately.
+
+
+
+# Bivariate Plots Section
+
+I am curious whether I can find any correlation between the continuous variables, which in my dataset include contribution amount, candidate's age and date. Shows below, but it doesn't show significant correlation. I interpret it as that each contributor's contribution amount doesn't show higher or lower based on the candidate's age, and doesn't change much as it closer to electrion day.  To clarify, I see clear trend from above plot saying the closer to electrion the more "total" contribution amt it is, and the top candidate are all have higher age. But the correlation here is "per person contribution amount", this per contribution amount is rather flat. I will use scatter plot to verify this later on.
+
+```{r any correlation 2, echo=FALSE, message=FALSE, warning=FALSE}
+
+camp_corr = camp[,c('contb_receipt_amt','cand_age','date')]
+camp_corr$date = as.numeric(camp_corr$date)
+cor(camp_corr,use='complete.obs')
+
+```
+
+Now I'd like to explore the contribution amt distribution between different parties. Boxplot is good for this purpose. The Democratic party has the most narrow inter-quartile range, while Green and Libertarian has highest inter-quartile range. I interpret it as follows: although Democratic party get most of the contribution, but on average contribution amount is lower than the other party that have less number of contribution. I think the less popular party may have more highly-devoted contributor that are willing to contribute high amount. 
+
+```{r 2D party vs contribution amt, echo=FALSE, message=FALSE, warning=FALSE}
+
+ggplot(data=camp, aes(x=cand_party, y=contb_receipt_amt)) +
+  geom_boxplot() +
+  scale_y_continuous(limits=c(0,quantile(camp$contb_receipt_amt,0.97)), breaks = seq(0,quantile(camp$contb_receipt_amt,0.97),50))
+
+```
+
+Next, I would like to see the contribution amount distribution by candidate. Using boxplot below, and rank from the candidate getting highest total contribution amount to the lowest.
+
+
+```{r dataframe to provide top contribution received candidate, echo=FALSE, message=FALSE, warning=FALSE}
+df_cand_nm_top <- camp %>%
+  group_by(cand_nm) %>%
+  summarise(sum_amt = sum(contb_receipt_amt),
+            n=n()) %>%
+  arrange(desc(sum_amt))
+
+
+# subset(df_cand_nm_top, select=cand_nm) # this works for filter as well
+cand_nm_top_amt <- head(arrange(df_cand_nm_top,desc(sum_amt)),n=10)[,'cand_nm']  # this also works as above
+cand_nm_top_amt <- unlist(c(cand_nm_top_amt),use.names=FALSE)
+cand_nm_top_amt
+
+```
+
+```{r 2D candidate vs contribution amt, fig.width=10, echo=FALSE, message=FALSE, warning=FALSE}
+
+ggplot(data=subset(camp, cand_nm %in% cand_nm_top_amt), aes(x=reorder(cand_nm, -contb_receipt_amt,sum), y=contb_receipt_amt)) +
+  geom_boxplot() +
+  scale_y_continuous(limits=c(0,quantile(camp$contb_receipt_amt,0.97)), breaks = seq(0,quantile(camp$contb_receipt_amt,0.97),50)) + 
+  theme(axis.text.x=element_text(angle=25, hjust=1)) # to tilt the x-axis label for visualization
+
+```
+
+The above boxplot shows that Hillary's per contributor's contribution amount inter-quartile range is second to the lowest, just higher than Bernard. Although these 2 candidates have top 2 highest total contribution amount, but in terms of per contributor's contribution amount they are the lowest. My interpretation is these two are getting lots more population of contribution which represent a more average contribution amount, in contrast to other candidates which attract more special-interest group's contribution, who are willing and capable of making higher contribution amount.
+
+Next, I will see the total contribution amount by candidates. The top 4 orders are aligned with the rank of number of contributor, but starting the 5th place this shows Marco Rubio, while the number of contributor plot is Benjamin Carson.
+
+```{r contribution amt by candidate name, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data=camp, aes(x=reorder(cand_nm,contb_receipt_amt,sum), y=contb_receipt_amt))+ # great, reorder is good way to add on a fly
+  geom_bar(stat='identity') +
+  scale_y_continuous(labels=comma) +
+  coord_flip()
+```
+
+
+Next, I'd like to visualize the contribution count and total amount by actual geographical map. I think this kind of visualization may give me more concrete idea about the distribution by location.
+
+
+```{r Geographical Map Plot for Contribution visualization, echo=FALSE, message=FALSE, warning=FALSE}
+
+states <- map_data("state")
+ca_state = subset(states, region == 'california')  # note: california is lower case
+counties = map_data('county')
+ca_county = subset(counties, region == 'california')
+
+ca_plot = ggplot(data=ca_state, mapping = aes(x=long, y=lat, group=group)) +
+  coord_fixed(1.3) +
+  geom_polygon(color = 'black', fill = 'gray')
+
+camp_county_group = group_by(camp, County)  # to create group_by object by County so you can create summary dataframe to merge with County latitude and longitude to create final map plot
+
+camp_county_summary = summarise(camp_county_group,
+                                Total_Contr = sum(contb_receipt_amt),
+                                n=n(),
+                                contr_per_person = Total_Contr/n)
+
+camp_county_summary$County = tolower(camp_county_summary$County) # to make County to lower case for join with the ca_county data.frame
+
+ca_county_summary = left_join(ca_county, camp_county_summary, by=c('subregion' = 'County')) # create a dataframe groupby "County" with summarise info per above code
+
+ca_summary_plot = ca_plot +
+  geom_polygon(data = ca_county_summary, aes(fill=Total_Contr), color = 'white') +
+  geom_polygon(color = 'black', fill = NA) +
+  theme_void()
+
+
+ca_summary_plot + scale_fill_viridis(breaks = c(5000,10000,100000,1000000,10000000,40000000),
+                                 trans = 'log10', labels=comma)   # labels=comma is to change the label's number format to comma rather than scientific notion, but it only available after you load in "scales" library.
+```
+
+The plot above shows an area at bottom left that has highest contribution amount more than $40 million (yellow area). In the dataframe summary followed immediately follow shows it is Los Angeles area. And the second brightest color is in the West slightly above the middle, which is the San Francisco County, and then Santa Clara county that adjacent to it. From my observation to the county area size, the Los Angeles county is larger than San Francisco and Santa Clara county combined, that may explain why the total contribution amount in Los Angeles are much higher than San Francisco or Santa Clara alone. If I combine San Francisco and Santa Clara together, the difference gap with Los Angeles are much smaller.
+These 3 areas are also the richest and population-densed with working professional and companies, so it makes sense to see these are the top 3 areas with highest total contribution amount.
+
+
+```{r to show top contribution county, echo=FALSE, message=FALSE, warning=FALSE}
+camp_county_summary$County <- stri_trans_totitle(camp_county_summary$County)  # capitalize each county word, to match with camp dataframe for plot purpose
+head(arrange(camp_county_summary, desc(Total_Contr)), n = 10) 
+```
+
+Next, I'd like to see the distribution of average contribution per contributor on the map. 
+
+```{r map to show average contribution by person, echo=FALSE, message=FALSE, warning=FALSE}
+ca_summary_plot2 = ca_plot +
+  geom_polygon(data = ca_county_summary, aes(fill=contr_per_person), color = 'white') +
+  geom_polygon(color = 'black', fill = NA) +
+  theme_void()
+
+ca_summary_plot2 + scale_fill_viridis()
+```
+
+The above map shows the county with highest average contribution per contributor is at Alpine (as shown in dataframe summary below), somewhere East of San Francisco. However, I see the number of contributor are only 46, which is a lot smaller than San Francisco or Los Angeles the large county, so Alpine's average is further away from the other county because even few outlier will have significant influence to Alpine's average. 
+
+Below is table to sort by average countribution per contributor.
+
+```{r to show top average contribution county, echo=FALSE, message=FALSE, warning=FALSE}
+head(arrange(camp_county_summary, desc(contr_per_person)), n = 10) 
+```
+
+Following I'd also like to visualize the contribution amount by County using bar chart. This gives similar information as above, but I can get a feel of the relative difference amount top 10. Los Angles exceed the other County by large margin.
+
+```{r contribution amt by County, echo=FALSE, message=FALSE, warning=FALSE}
+df_county_top <- head(arrange(camp_county_summary, desc(Total_Contr)), n = 10)[,1]  # create vector of top contribution amount county  => I would prefer to use directly use arrange plus head to achieve this, no need subset and %in% and unlist below => but this may be the only way if your group_by is more than 1 variable.
+df_county_top <- unlist(c(df_county_top),use.names=FALSE) # finally, add unlist(use.names=FALSE) success to create a character vector that I can %in% 
+
+ggplot(data=subset(camp, County %in% df_county_top), aes(x=reorder(County,contb_receipt_amt,sum),y=contb_receipt_amt))+
+  geom_bar(stat='identity') +
+  scale_y_continuous(labels=comma) +
+  xlab('County') +
+  coord_flip()
+```
+
+
+Next, I want to see the distribution of each contributor's contribution amount using box plot for top 10 county, sorting by highest total contribution amount to lowest. The plot below shows Los Angeles's average is the lowest among top 10, and I can see 75 percentile is noticeably lower than San Francisco and Santa Clara. I am thinking it may have to do with the higher average income from Northern California / Silicon Valley area, or may also related to there could have different composition of the contributor with different social status or occupation, perhaps the involvement to presidential election are more wide-spread to middle and lower class in Los Angeles area which lower the average contribution amount. It could also be caused by the type of presidential campaign that Northern California and Southern California are targeted different social class or occupation etc, that may be interesting to dig further in a separate study.
+
+```{r boxplot of contribution amt by county, fig.width=10, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data=subset(camp, County %in% df_county_top), aes(x=reorder(County,-contb_receipt_amt,sum),y=contb_receipt_amt))+
+  geom_boxplot() +
+  scale_y_continuous(labels=comma,limits=c(0,quantile(camp$contb_receipt_amt,0.97)), breaks = seq(0,quantile(camp$contb_receipt_amt,0.97),50)) +
+  xlab('County')
+```
+
+Next, I'd like to see the total contribution amount by occupation (different from above plot exploring the number of contribution rather than the total contribution amount.) I compare this ranking by contribution amount with the ranking by number of contribution to notice that "RETIRED"" is still the first place, but "ATTORNEY" jump to second place, signaling Attorney's average contribution are much higher than the thrid place "NOT EMPLOYED".  And then "HOMEMAKER"" and "CEO" jump ahead replacing "TEACHER" and "ENGINEER", signaling that HOMEMAKER and CEO contribute higher on average. 
+
+```{r dataframe with top rank by contribution amount, echo=FALSE, message=FALSE, warning=FALSE}
+library(dplyr)
+xtest2 = camp %>%
+  dplyr::group_by(contbr_occupation) %>%
+  dplyr::summarise(sum_amt = sum(contb_receipt_amt)) %>%
+  dplyr::arrange(desc(sum_amt))
+xtest2
+
+```
+
+```{r Success for top contribution by occupation use reorder builtin function, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data=head(xtest2,15),aes(x=reorder(contbr_occupation,sum_amt,sum),y=sum_amt))+
+  geom_bar(stat='identity') +
+  scale_y_continuous(labels=comma) +
+  xlab('Occupation') +
+  coord_flip()
+```
+
+Next I'd like to see the contribution amonut by Employer, and to compare with one of the previous plot showing number of contribution by Employer. In contrast to the ranking in number of contribution, the ranking in contribution amount also have 'SELF-EMPLOYED', 'RETIRED' and 'NOT EMPLOYED' at the top. However, the "HOMEMAKER" is the first one coming after, even higher than GOOGLE and KAISER PERMANENTE which is interesting to see, and is a bit puzzling to me because I doubt HOMEMAKER can earn more than high tech engineer, but perhaps I underestimate HOMEMAKER's degree of involvement and their income source. It is one potential question I can dig further.
+
+```{r contribution by employer, echo=FALSE, message=FALSE, warning=FALSE}
+xEmplr <- camp %>%
+  dplyr::group_by(contbr_employer) %>%
+  dplyr::summarise(sum_amt = sum(contb_receipt_amt)) %>%
+  dplyr::arrange(desc(sum_amt))
+xEmplr
+```
+
+Following is to visualize the contribution amount by Employer using bar plot, that is to visualize the comparison.
+
+```{r top contribution by employer use reorder builtin function, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data=head(xEmplr,25),aes(x=reorder(contbr_employer,sum_amt,sum),y=sum_amt))+
+  geom_bar(stat='identity') +
+  scale_y_continuous(labels=comma) +
+  xlab('Employer') +
+  coord_flip()
+
+```
+
+Excluding any N/A or None, Self-Employed is the highest contributor, and follow by Retired, Homemaker. The first company name appear is Google !  Then Stanford University, and Apple. This ranking differ a bit from the number of contributor count.
+
+
+Next, I'd like to see how total contribution amount varies with times. My initial plot below is not successful as I expected because it shows too much fluctuation, so I will need to further adjust it.
+
+
+```{r Contribution amt by contibution date not ideal, fig.width=10, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data=camp, aes(x=date, y=contb_receipt_amt)) +
+  geom_bar(stat='identity') + 
+  scale_x_date(date_breaks='1 month', labels=date_format('%b-%y'), limits=as.Date(c('2015-09-01','2016-12-31'))) +
+  theme(axis.text.x=element_text(angle=25, hjust=1)) # to tilt the x-axis label for visualization
+```
+
+To improve on the visualization, I will create a dataframe utilizing library zoo with as.yearmon function. And I will do plotting based on this dataframe. 
+
+```{r to bin with one month, echo=FALSE, message=FALSE, warning=FALSE}
+library(zoo) # for yearmon()
+df_camp_date2 <- subset(camp,date>'2015-08-31') %>%  # to subset only more recent date, simply the plot
+  group_by(date=as.yearmon(date)) %>%
+  summarise(sum_amt = sum(contb_receipt_amt),
+            n=n()) %>%
+  arrange(desc(sum_amt))
+
+df_camp_date2
+```
+```{r monthly contribution total, echo=FALSE, message=FALSE, warning=FALSE}
+
+library(scales)
+ggplot(data=df_camp_date2, aes(x=as.factor(date), y=sum_amt)) +  # you need to add as.factor() to convert the date from zoo's yearmon class to normal factor to allow it demonstrate on x-axis! https://stackoverflow.com/questions/22968702/modifying-plot-in-ggplot2-using-as-yearmon-from-zoo
+  geom_bar(stat='identity') + 
+  scale_y_continuous(labels=comma) +
+  theme(axis.text.x=element_text(angle=25, hjust=1)) # to tilt the x-axis label for visualization
+
+
+```
+
+Above bar plot successfully bin the contribution amount by month. It shows upward trend as it gets closer to the eletrion date. This upward trend is similar to one of the previous plot which shows number of contribution by month. However, this contribution amount is more steady increase without significant falls. In comparison, the number of contribution has noticeable fall in Jul-16 to Sep-16 timeframe. This signal that although there are less number of contributor in Jul to Sep-16, but their average contribution amount is higher. 
+
+Next, I would like to use scatter plot to see the distribution of each contribution amount by date, and to see whether the each contribution amount may increase or decrease as it gets closer to election date.
+
+```{r contribution by date in scatter plot, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data=camp, aes(x=date, y=contb_receipt_amt)) +
+  geom_point(alpha=1/25, position=position_jitter(h=0),color='orange') + 
+  scale_x_date(date_breaks='1 month', labels=date_format('%b-%y'), limits=as.Date(c('2015-09-01','2016-12-31'))) +
+  scale_y_continuous(breaks=seq(0,max(camp$contb_receipt_amt),1000)) +
+  theme(axis.text.x=element_text(angle=25, hjust=1)) # to tilt the x-axis label for visualization
+
+
+```
+
+The plot looks rather flat with several popular contribution amount. 
+The most popular contribution amount is still under $500 (and from one of the previous plot I know more than 75% percentile is under $88. However, it is also interesting to see that $1000, $2000 and $2750 seems also pretty popular amount, so I am suspecting there is a pre-determined options for contributor to select for their contribution. In $5500 range is also interesting showing larger contributor, may be interesting to see the cause.
+
+However, the above is a little too crowded for me, so let me limit the contribution amount to be within 99% percentile, hope it may show me more detail.
+
+```{r contribution by date in scatter plot limit, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data=camp, aes(x=date, y=contb_receipt_amt)) +
+  geom_point(alpha=1/25, position=position_jitter(h=0),color='orange') + 
+  scale_x_date(date_breaks='1 month', labels=date_format('%b-%y'), limits=as.Date(c('2015-09-01','2016-12-31'))) +
+  scale_y_continuous(limit=c(0,quantile(camp$contb_receipt_amt,0.99)),breaks=seq(0,max(camp$contb_receipt_amt),500)) +
+  theme(axis.text.x=element_text(angle=25, hjust=1)) # to tilt the x-axis label for visualization
+```
+
+From above plot that limit the y-axis to $2750 range, it still looks pretty flat, meaning people have similar preference of contribution amount across time. However, at some amount range it seems to appear more as time closer to election date, for example, the $800 range, and $400 range. 
+
+Next, I'd like to see how is the contribution amount differ by candidate's age. The 70 shows get the most or contribution. And I know the reason is because Hillary is at her 70. So this chart illustrate the candidates who get the most contribution are higher than 70 year-of-old.
+
+```{r contribution amt by candidate age, echo=FALSE, message=FALSE, warning=FALSE}
+
+ggplot(data=camp, aes(x=cand_age, y=contb_receipt_amt)) + 
+  geom_bar(stat='identity') + 
+  scale_y_continuous(labels=comma) +
+  scale_x_continuous(breaks=seq(40,80,5))
+```
+
+
+# Bivariate Analysis
+
+### Talk about some of the relationships you observed in this part of the \
+investigation. How did the feature(s) of interest vary with other features in \
+the dataset?
+
+I use map to visualize which county has highest total contribution amount (ie. Los Angeles, San Francisco and Santa Clara), and which county has highest average contribution amount by contributor. (ie. Alpine, San Mateo and San Francisco). It is interesting to see that while Los Angeles is the top 1 county getting highest total contribution amount, but its average contribution amount is the lowest among top 10. In addition, the average contribution amount are also the lowest for Hillary, and for Democratic party, this seems to me that the supporter of Hillary include higher percentage of middle and lower-middle income than other candidates. 
+
+I also confirm that the contributino amount by month are increasing as it gets closer to the election day. However, the average contribution amount doesn't show significant difference as it gets close to election day. 
+
+### Did you observe any interesting relationships between the other features \
+(not the main feature(s) of interest)?
+
+I am trying to do correlation between each contributor's contribution amount, date and candidates age, but there shows little correlation, meaning that each contributor's contribution amount don't get significant increase as it gets closer to election day.  However, it is clear to me by another plot in univariate analysis, the number of contriution increaes as it gets closer to election day.
+
+### What was the strongest relationship you found?
+
+The strongest relationship I found perhaps it the steady increasing trend of total contribution amount by month increases as it gets close to election day. 
+
+
+# Multivariate Plots Section
+
+
+Following I'd like to introduce more variable into the plot. The first is to use the total contribution amount by county, and further split by candidate's gender.
+
+```{r contribution amt by county and gender, echo=FALSE, message=FALSE, warning=FALSE}
+df_county_top <- head(arrange(camp_county_summary, desc(Total_Contr)), n = 10)[,1]  # create vector of top contribution amount county
+df_county_top <- unlist(c(df_county_top),use.names=FALSE) # finally, add unlist(use.names=FALSE) success to create a character vector that I can %in%
+
+ggplot(data=subset(camp, County %in% df_county_top), aes(x=reorder(County,contb_receipt_amt,sum),y=contb_receipt_amt))+
+  geom_bar(stat='identity') +
+  scale_y_continuous(labels=comma) +
+  xlab('County') +
+  facet_wrap(~cand_gender) +
+  coord_flip()
+  
+```
+
+The above bar plot shows only 1 county, Orange, out of the top 10, shows to have more contribution amount to Male candidate than Female candidate. The rest of the county all have more contribution to female candidate than male, that must be to Hillary.
+
+I am curious to see which male candidate in Orange county is doing so well that exceed Hillary, so plot followed is to see the contribution by candidate in Orange county only.
+
+```{r see orange county contribution amt by candidate, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data=subset(camp,County =='Orange'),aes(x=reorder(cand_nm,contb_receipt_amt,sum),y=contb_receipt_amt))+
+  geom_bar(stat='identity')+
+  scale_y_continuous(labels=comma)+
+  coord_flip()
+```
+
+The plot above that narrow to see Orange County, shows that Donald Trump is getting large portion of contribution amount, just second to Hillary. It looks like that Donald Trump has many supporter in Orange county area, which I believe is one of the reason that only in Orange there are more contribution to Male candidate than Female candidate.
+
+Next, I'd like to see the contribution amount by County, political party and candidate gender. 
+
+
+```{r try 4D, echo=FALSE, message=FALSE, warning=FALSE}
+
+ggplot(data=subset(camp, County %in% df_county_top), aes(x=reorder(County,contb_receipt_amt,sum),y=contb_receipt_amt, fill=cand_gender))+
+  geom_bar(stat='identity') +
+  scale_y_continuous(labels=unit_format(unit="K", scale=1/1000)) +
+  xlab('County') +
+  coord_flip()+
+  facet_wrap(~cand_party) +
+  theme(axis.text.x = element_text(angle=25, hjust=1)) # to tilt the x-axis label for visualization
+
+```
+
+The plot above illustrate that Democratic party is the big winner in receiving contribution, but majority is to female candidate (ie. Hillary), while Republican is the next biggest winner but almost all contribution is to male candidate. 
+
+I would like to improve the plot slightly to separate male and female bar to both start from 0 to make easier comparison between male and female. The plot following to achieve it.
+
+```{r try group_by county gender party, echo=FALSE, message=FALSE, warning=FALSE}
+
+df_4d <- camp %>%
+  group_by(County, cand_party, cand_gender) %>%
+  summarise(sum_amt = sum(contb_receipt_amt),
+            n=n()) %>%
+  arrange(desc(sum_amt))
+df_4d
+
+```
+
+```{r try 4D separate dodge male and female, echo=FALSE, message=FALSE, warning=FALSE}
+
+ggplot(data=subset(df_4d, County %in% df_county_top), aes(x=reorder(County,sum_amt,sum),y=sum_amt, fill=cand_gender))+
+  geom_bar(stat='identity', position=position_dodge()) +
+  scale_y_continuous(labels=unit_format(unit="K", scale=1/1000)) +
+  xlab('County') +
+  coord_flip()+
+  facet_wrap(~cand_party) +
+  theme(axis.text.x = element_text(angle=25, hjust=1)) # to tilt the x-axis label for visualization
+
+```
+
+The plot above successfully list male and female bar separately, to make it easier to compare. And it helps me to easily identify that the reason the "Orange county" has more contribution to male candidate than female candidate is because of strong contribution to Republican Party (ie. Donald Trump). Orange county is the second highest county for Republican Party, second to Los Angeles county.
+
+
+Review what are top 10 county with highest contribution amount.
+
+```{r review what the df county top contain, echo=FALSE, message=FALSE, warning=FALSE}
+df_county_top
+# head(df_county_top,5)  # great, success to further narrow down to top 5
+```
+
+
+
+```{r contribution amt by county and candidate, echo=FALSE, message=FALSE, warning=FALSE}
+
+ggplot(data=subset(camp, County %in% df_county_top), aes(x=reorder(County,contb_receipt_amt,sum),y=contb_receipt_amt))+
+  geom_bar(stat='identity') +
+  scale_y_continuous(labels=comma) +
+  xlab('County') +
+  coord_flip() +
+  facet_wrap(~cand_nm)
+
+```
+
+Next, I'd like to see the contribution amount by each candidate, in top 5 counties.
+
+```{r top 5 contribution amt by County, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data=subset(camp, County %in% head(df_county_top,5)), aes(x=reorder(County,contb_receipt_amt,sum),y=contb_receipt_amt))+ # see top 5
+  geom_bar(stat='identity') + 
+  scale_y_continuous(labels=unit_format(unit="K", scale=1/1000)) +
+  xlab('County') +
+  coord_flip() +
+  facet_wrap(~cand_nm)+
+  theme(axis.text.x = element_text(angle=25, hjust=1)) # to tilt the x-axis label for visualization
+```
+
+The above plot shows Hillary receive significant higher contribution in top 5 counties than all other candidates.
+
+Next, I'd like to visualize the total contribution amount by date, and further to split by Political Party.
+
+```{r try group by both date and political party, echo=FALSE, message=FALSE, warning=FALSE}
+df_camp_date3 <- subset(camp,date>'2015-08-31') %>%  # to subset only more recent date, simply the plot
+  group_by(date=as.yearmon(date), party=cand_party) %>%  # group by both date and party.
+  summarise(sum_amt = sum(contb_receipt_amt),
+            n=n())
+  
+df_camp_date3
+```
+
+The first plot is using bar plot to visualize it, it shows increasing trend of number of contribution made toward election day, and Democratic Party is always the big winner.
+
+```{r bar style number of countribution by party, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data=df_camp_date3, aes(x=as.factor(date), y=n)) +  # you need to add as.factor() to convert the date from zoo's yearmon class to normal factor to allow it demonstrate on x-axis! https://stackoverflow.com/questions/22968702/modifying-plot-in-ggplot2-using-as-yearmon-from-zoo
+  geom_bar(stat='identity',aes(fill=party)) + 
+  scale_y_continuous(labels=comma) +
+  theme(axis.text.x=element_text(angle=25, hjust=1)) # to tilt the x-axis label for visualization
+```
+
+Next, I change the plot to visualize contribution amount rather than number of contribution on y-axis, and it shows more steady increasing trend, but comparing to above plot, the % of Democratic party contribution amount is not as far off as the number of contribution made, which singal that the average contribution amount to Democratic Party is lower than Republican Party.
+
+```{r bar style amount of countribution by party, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data=df_camp_date3, aes(x=as.factor(date), y=sum_amt)) +  # you need to add as.factor() to convert the date from zoo's yearmon class to normal factor to allow it demonstrate on x-axis! https://stackoverflow.com/questions/22968702/modifying-plot-in-ggplot2-using-as-yearmon-from-zoo
+  geom_bar(stat='identity',aes(fill=party)) + 
+  scale_y_continuous(labels=comma) +
+  theme(axis.text.x=element_text(angle=25, hjust=1)) # to tilt the x-axis label for visualization
+```
+
+
+Next, I would like to convert above stacked plot to a line plot because it is easier to compare between different parties.
+
+
+```{r success using scale_x_yearmon contribution by party by date, fig.width=10 , echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data=df_camp_date3, aes(x=date, y=sum_amt)) + 
+  geom_line(aes(color=party), stat='identity') + 
+  scale_y_continuous(labels=comma) +
+  scale_x_yearmon(format='%b%y', n=30)+
+  theme(axis.text.x=element_text(angle=25, hjust=1)) # to tilt the x-axis label for visualization
+```
+
+The above plot shows the up and down of each month. Democratic party received contriubtion start ramping up starting Jan-16 which I believe should be the start time of major presidential campaign. And Republican Party is comparatively more consistnet around $2M each month. 
+
+Next, the same plot but substitude the y-axis to count of contribution made each month. It follows the same increasing trend as the above plot. The thing caught my attention is a drop in Jun-16 timeframe for Democratic Party. I don't see an obvious drop in the plot above shows contribution amount, soI think the average contribution amount should be higher at during that time frame to keep up the total contribution amount at the similar level as prior months.
+
+```{r success using scale_x_yearmon n count by party by date, fig.width=10 , echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data=df_camp_date3, aes(x=date, y=n)) + 
+  geom_line(aes(color=party), stat='identity') + 
+  scale_y_continuous(labels=comma) +
+  scale_x_yearmon(format='%b%y', n=30)+
+  theme(axis.text.x=element_text(angle=25, hjust=1)) # to tilt the x-axis label for visualization
+```
+
+Next, I will look at the count of contribution to each of he top 10 candidate by date, hoping to see the trend of each candidate's receiving contribution.
+
+```{r group by both date and candidate, echo=FALSE, message=FALSE, warning=FALSE}
+df_camp_date_name <- subset(camp,date>'2013-08-31') %>%  # to subset only more recent date, simplify the plot
+  group_by(date=as.yearmon(date), cand_nm=cand_nm) %>%  # group by both date and party.
+  summarise(sum_amt = sum(contb_receipt_amt),
+            n=n()) %>%
+  arrange(desc(sum_amt))
+  
+df_camp_date_name
+```
+
+
+```{r success using scalexyearmon n by name by date, fig.width=10 , echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data=subset(df_camp_date_name, cand_nm %in% cand_nm_10), aes(x=date, y=n, color=cand_nm)) + 
+  geom_line(stat='identity') + 
+  geom_point() +
+  scale_y_continuous(labels=comma) +
+  scale_x_yearmon(format='%b%y', n=50)+
+  theme(axis.text.x=element_text(angle=80, hjust=1)) # to tilt the x-axis label for visualization
+```
+
+The above plot interestingly shows up until Apr-16, Bernard Sanders receive the most count of contribution, even better than Hillary Clinton. Let me use plot below to look at the contribution amount rather than count, so see whether that is still the case.
+
+```{r success using scalexyearmon amt by name by date, fig.width=10 , echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data=subset(df_camp_date_name, cand_nm %in% cand_nm_top_amt), aes(x=date, y=sum_amt, color=cand_nm)) + 
+  geom_line(stat='identity') + 
+  geom_point() +
+  scale_y_continuous(labels=comma) +
+  scale_x_yearmon(format='%b%y', n=50)+
+  theme(axis.text.x=element_text(angle=80, hjust=1)) # to tilt the x-axis label for visualization
+```
+
+The above plot measuring contribution amount looks quite than its previous plot measuring the count of contribution. This plot have Hillary Clinton to be at the top 1 place at all time, except period prior to Mar-15 when there is no contribution yet to Hillary, and in Mar-16, Bernard Sanders may be slightly higher.  It shows to me that the average contribution amount each contributor give to Hillary is higher than the average amount give to Bernard during period prior to Apr-16. Perhaps Hillary's presidential campaign was more targeted to high income contributor at that period. 
+
+One thing interesting is that the earliest contribution are made to Marco Rubio in Oct-13, which are way ahead of all other candidates. It looks like he starts the campaign quite early, or perhaps is a fund carryover from a different fund/event to the presidential election purpose.
+
+
+# Multivariate Analysis
+
+### Talk about some of the relationships you observed in this part of the \
+investigation. Were there features that strengthened each other in terms of \
+looking at your feature(s) of interest?
+
+Looking at the contribution count and amount by date and by party, the Democratic are always the number 1 in both count and amount measure. California is a Democratic state. Looking at the same line plot but substitude the party with the candidates' name, Hillary Clinton is still the number one in all period in terms of contribution amount by month, but if measure by count, then Bernard Sanders are the top 1 up until Apr-16.
+
+
+### Were there any interesting or surprising interactions between features?
+
+It is interesting to see that Orange county is the only couny in top 10 counties that contribution to Female are lower than Male. And another plot shows the reason is due to the contribution to Donald Trump is pretty strong in Orange. All other top 10 counties are giving Hillary Clinton the contribution higher than all other male candidate combined.
+
+
+### OPTIONAL: Did you create any models with your dataset? Discuss the \
+strengths and limitations of your model.
+
+N/A
+
+------
+
+# Final Plots and Summary
+
+### Plot One
+```{r Plot_One, echo=FALSE, message=FALSE, warning=FALSE}
+
+ca_summary_plot + scale_fill_viridis(breaks = c(5000,10000,100000,1000000,10000000,40000000),
+                                 trans = 'log10', labels=comma, name='Total Contribution Amount $')
+```
+
+
+### Description One
+The first plot visualize goegraphically which county receive the most contribution amount. The yellow area is Los Angeles county which are at $40 million, that is almost 4 times higher than the second and third place, San Francisco and Santa Clara county in the middle west area. However, by looking at the size of the top 3 counties, Los Angeles area is larger than both San Francisco and Santa Clara county combined, so it is difficult to say whether it is because people are more involved in politics in Los Angeles without compare the popluation at each County, so I may want to add population per county in future study. This map visualize for me that the most contribution are from the metropolitan area (ie. Los Angeles and San Francisco), it is most densely populated with most job opprotunity. The metropolitan area as a center and as it get further away from it, the less contribution the County gets. 
+
+
+### Plot Two
+```{r Plot_Two, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data=subset(df_4d, County %in% df_county_top), aes(x=reorder(County,sum_amt,sum),y=sum_amt, fill=cand_gender))+
+  geom_bar(stat='identity', position=position_dodge()) +
+  scale_y_continuous(labels=unit_format(unit="K", scale=1/1000)) +
+  xlab('County') +
+  ylab('Contribution Amount ($)')+
+  scale_fill_discrete(name='Candidate Gender') +  # added to modify the legend title only
+  ggtitle('Contribution by Top 10 County, Party and Candidate Gender')+
+  coord_flip()+
+  facet_wrap(~cand_party) +
+  theme(axis.text.x = element_text(angle=25, hjust=1)) # to tilt the x-axis label for visualization
+  
+```
+
+### Description Two
+The second plot shows the contributino amount by top 10 counties, by political paries and by candidate gender. This shows Democratic Party receive significant higher contribution amount compare to other party, shows that California is Democratic state. Within Democratic Party, contribution to Female candidate greatly exceed Male candidates, and the reason must be Hillary Clinton is the wining candidate in California. Republican Party is the second to Democratic Party, but lower by large margin than Democratic Party. Within Republican Party, majority of contribution are made to male candidate. If compare Republican Party to Democratic Party, the Orange county is the only one that Republican receive more contribution amount than Democratic. This shows Orange county to have stronger supporter to Republican Party, specifically to Donald Trump.
+
+
+### Plot Three
+```{r Plot_Three, echo=FALSE, message=FALSE, warning=FALSE, fig.width=10}
+ggplot(data=subset(df_camp_date_name, cand_nm %in% cand_nm_top_amt), aes(x=date, y=sum_amt, color=cand_nm)) + 
+  geom_line(stat='identity') + 
+  geom_point() +
+  xlab('Month')+
+  ylab('Contribution Amount ($)')+
+  ggtitle('Contribution by Candidate and Month') +
+  scale_color_discrete(name='Candidate')+
+  scale_y_continuous(labels=comma) +
+  scale_x_yearmon(format='%b%y', n=50)+
+  theme(axis.text.x=element_text(angle=80, hjust=1)) # to tilt the x-axis label for visualization
+```
+
+### Description Three
+The third plot shows the contribution amount by candidate and by month. This shows Hillary Clinton is the highest contribution receiving candidate at all time except prior to Apr-15 which no contribution made to Hillary yet, and Mar-16 which Bernard is higher by small margin. Hillary's contribution skyrocket starting Apr-16, and may be interesting to look into what is the trigger event in later study. Bernard Sanders is the second highest receiving contribution in California. Starting Mar-16 Bernard's contribution going downward trend, and drop to almost zero on Aug-16, that coincile with Bernard drop out election in Jul-16. Donald Trump's contribution start ramping up around Apr-16, and it peak at Jul-16 to Oct-16, it coincile with Donald Trump's offical nomination on Jul-16.
+
+------
+
+# Reflection
+
+My analysis's major interest feature is the contribution amount, and I explore this with different measures including by candidate, by politcal party, by candidate gender, by date, by county, etc. At the same time, I substitude contribution amount with the count of contribution to explore the difference between count and amount. From above analysis, I get to know more understanding of California's contribution between different party, different candidate, different timing. The increasing trend of contribution amount is expected, and Hillary is almost always the top 1 receiving candidates in top 10 counties, that also makes Female won the majority of contribution than Male in all top 10 counties.  So it is interesting to see Orange county is the only county that Male candidate get more overall contribution amount than Female candidate, and upon digging further it shows the Orange county's contribution to Donald Trump is pretty high. 
+
+The analysis also proves to me that California is Democratic state because the contribution amount to Democratic party is significant higher than to Democratic party. The geographical map with color scale also shows Los Angeles and San Francisco is the top 2 county with highest contribution amount, and for counties that are farther away from these 2 metropolitan, it tends to get lower contribution amount, which makes sense because metropolitan should have most densed population with richer communities.
+
+My biggest struggle when performing above analysis is there are many ggplot syntax that I was not familiar with, and have done quite a lot of online search in order to accomplish something simple. For example, to plot the contribution trend by date, the method scale_x_date works well with geom_bar or histogram, but when I try to create group_by dataframe by Month-Year, I notice the pure date doesn't work well in this situation. Finally, I find zoo library's yearmon() function that help me to create group_by dataframe, and further apply the scale_x_yearmon() to the ggplot to complete it. Things in R gets simple once I know how, but it takes time to find these key function. I am glad to work on this project that familiarize myself with many different way of visualization using ggplot, and I become comfortable with making plot for exploratory analysis with R.
+
+To further elaborate my analysis, I would like to introduce another dataset about campaign's timing, type and location that took place, and I may further evaluate the success and effect of these presidential campaign. Also, I may want to introduce the population number by county, so that I can assess the actual % contributor out of total population to measure involvement by county, and also get per capita contribution amount.

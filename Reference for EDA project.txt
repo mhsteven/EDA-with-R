@@ -1,0 +1,19 @@
+1. Stack Overflow:
+
+Zoo library for date manipulation: https://stackoverflow.com/questions/44041438/ggplot2-yearmon-scale-and-geom-bar?rq=1
+
+group_by problem solving: https://stackoverflow.com/questions/21653295/dplyr-issues-when-using-group-bymultiple-variables
+
+2. Cookbook R:
+Modify legend title: http://www.cookbook-r.com/Graphs/Legends_(ggplot2)/
+
+3. Blog:
+
+To create map plot based on latitude and longitude.  https://eriqande.github.io/rep-res-eeb-2017/map-making-in-R.html
+
+4. Udacity lecture for many basic library and function.
+
+
+5. Other websites:
+
+To manipulate dataframe: http://r.789695.n4.nabble.com/remove-last-row-of-a-data-frame-td4652858.html
